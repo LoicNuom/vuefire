@@ -8,9 +8,10 @@ import {
   _DataSourceOptions,
   noop,
   _ResolveRejectFn,
+  isSSR,
 } from '../shared'
 import { ref, Ref, unref } from 'vue-demi'
-import type {
+import {
   CollectionReference,
   DocumentChange,
   DocumentData,
@@ -22,6 +23,7 @@ import type {
   SnapshotListenOptions,
   SnapshotOptions,
 } from 'firebase/firestore'
+import { getFirestore as getFirestoreAdmin } from 'firebase-admin/firestore'
 import { getDoc, getDocs } from 'firebase/firestore'
 import { onSnapshot } from 'firebase/firestore'
 
@@ -425,7 +427,16 @@ export function bindCollection<T = unknown>(
   }
 
   if (once) {
-    getDocs(collection).then(onSnapshotCallback).catch(reject)
+    if (isSSR()) {
+      const db = getFirestoreAdmin()
+      const path = (collection as any)._path.segments.join('/')
+      db.collection(path)
+        .get()
+        .then((snap: any) => onSnapshotCallback(snap))
+        .catch(reject)
+    } else {
+      getDocs(collection).then(onSnapshotCallback).catch(reject)
+    }
   } else {
     // we need a way to detect when the data is fully loaded
     stopOnSnapshot = onSnapshot(collection, onSnapshotCallback, reject)
@@ -464,7 +475,9 @@ export function bindDocument<T>(
   let stopOnSnapshot = noop
 
   function onSnapshotCallback(snapshot: DocumentSnapshot<T>) {
-    if (snapshot.exists()) {
+    const exist =
+      typeof snapshot.exists === 'boolean' ? snapshot.exists : snapshot.exists()
+    if (exist) {
       updateDataFromDocumentSnapshot(
         options,
         target,
@@ -483,7 +496,16 @@ export function bindDocument<T>(
   }
 
   if (options.once) {
-    getDoc(document).then(onSnapshotCallback).catch(reject)
+    if (isSSR()) {
+      const db = getFirestoreAdmin()
+      const path = (document as any)._key.path.segments.join('/')
+      db.doc(path)
+        .get()
+        .then((snap: any) => onSnapshotCallback(snap))
+        .catch(reject)
+    } else {
+      getDoc(document).then(onSnapshotCallback).catch(reject)
+    }
   } else {
     stopOnSnapshot = onSnapshot(document, onSnapshotCallback, reject)
   }
